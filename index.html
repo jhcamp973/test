@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>수도 검침 기록</title>
+    <style>
+        /* 필수 스타일만 남김 */
+        label { display: block; margin-bottom: 5px; }
+        input, select, button {
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .tab { overflow: hidden; border: 1px solid #ccc; background-color: #f1f1f1; }
+        .tab button { background-color: inherit; float: left; border: none; outline: none; cursor: pointer; padding: 14px 16px; }
+        .tab button.active { background-color: #ccc; }
+        .tabcontent { display: none; padding: 6px 12px; border: 1px solid #ccc; border-top: none; }
+        /* 업체 정보 관리 스타일 */
+        #companyList { list-style: none; padding: 0; }
+        #companyList li { display: flex; align-items: center; margin-bottom: 5px; }
+        #companyList .company-info { flex-grow: 1; } /* 업체 정보가 공간을 차지하도록 */
+        #companyList .edit-btn, #companyList .delete-btn { margin-left: 5px; padding: 3px 6px; font-size: 12px; }
+          #companyList .edit-btn { background-color: #008CBA; color:white; }
+        #companyList .delete-btn { background-color: #f44336; color:white;}
+
+        /* 수정/삭제 버튼 스타일 */
+        .edit-record-btn, .delete-record-btn {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 5px; /* 버튼 사이 간격 */
+        }
+        .edit-record-btn {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .edit-record-btn:hover {
+            background-color: #66bb6a;
+        }
+
+        .delete-record-btn {
+          background-color: #f44336;
+          color: white;
+        }
+        .delete-record-btn:hover {
+            background-color: #d32f2f;
+        }
+
+    </style>
+</head>
+<body>
+    <h1>수도 검침 기록</h1>
+
+    <div class="tab">
+        <button class="tablinks active" onclick="openTab(event, 'recordTab')">기록</button>
+        <button class="tablinks" onclick="openTab(event, 'companyTab')">업체 관리</button>
+        <button class="tablinks" onclick="openTab(event, 'compareTab')">비교</button>
+    </div>
+
+    <div id="recordTab" class="tabcontent" style="display:block;">
+        <form id="meterForm">
+            <label for="readingMonth">월:</label>
+            <input type="month" id="readingMonth" required>
+
+            <label for="company">업체:</label>
+            <select id="company" required>
+                <option value="">선택</option>
+            </select>
+
+            <label for="waterMeter">검침값:</label>
+            <input type="number" id="waterMeter" required>
+
+            <button type="submit">저장</button>
+        </form>
+
+        <div>
+          <label for="searchMonth">검색 (월):</label>
+          <input type="month" id="searchMonth">
+          <label for="searchCompany">검색 (업체):</label>
+          <input type="text" id="searchCompany" placeholder="업체명">
+          <button type="button" onclick="searchRecords()">검색</button>
+        </div>
+
+        <table id="recordsTable">
+            <thead>
+                <tr><th>월</th><th>업체</th><th>검침값</th><th>수정/삭제</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div id="companyTab" class="tabcontent">
+        <h2>업체 관리</h2>
+        <input type="text" id="newCompanyFloor" placeholder="층">
+        <input type="text" id="newCompanyName" placeholder="업체명">
+        <input type="text" id="newCompanyUnit" placeholder="호수">
+        <button id="addCompany">업체 추가</button>
+        <ul id="companyList"></ul>
+    </div>
+
+    <div id="compareTab" class="tabcontent">
+        <table id="compareTable">
+            <thead>
+                <tr></tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+    const form = document.getElementById('meterForm');
+    const recordsTable = document.getElementById('recordsTable').getElementsByTagName('tbody')[0];
+    const companySelect = document.getElementById('company');
+    const addCompanyButton = document.getElementById('addCompany');
+    const newCompanyFloorInput = document.getElementById('newCompanyFloor');
+    const newCompanyNameInput = document.getElementById('newCompanyName');
+    const newCompanyUnitInput = document.getElementById('newCompanyUnit');
+    const companyList = document.getElementById('companyList');
+    const compareTable = document.getElementById('compareTable');
+    const compareTableHead = compareTable.querySelector('thead tr');
+    const compareTableBody = compareTable.querySelector('tbody');
+    const searchMonthInput = document.getElementById('searchMonth');
+    const searchCompanyInput = document.getElementById('searchCompany');
+
+
+    // 데이터 불러오기
+    let records = JSON.parse(localStorage.getItem('records')) || [];
+    let companies = JSON.parse(localStorage.getItem('companies')) || [
+        { floor: "1층", name: "본죽", unit: "1호" },
+        { floor: "1층", name: "씨유", unit: "2호" },
+        { floor: "1층", name: "나뚜루", unit: "3호" },
+    ];
+
+    // 데이터 저장 함수
+    function saveRecords() {
+        localStorage.setItem('records', JSON.stringify(records));
+    }
+    function saveCompanies() {
+        localStorage.setItem('companies', JSON.stringify(companies));
+    }
+
+    // 현재 월 가져오기
+    function getCurrentMonth() {
+        const today = new Date();
+        return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+
+    // 업체 목록 렌더링
+    function renderCompanyList() {
+        companyList.innerHTML = '';
+        companySelect.innerHTML = '<option value="">선택</option>';
+
+        companies.forEach((company, index) => {
+            const listItem = document.createElement('li');
+            listItem.innerHTML = `<span class="company-info">${company.floor} ${company.name} ${company.unit}</span>`;
+
+            const editButton = document.createElement('button');
+            editButton.textContent = '수정';
+            editButton.className = 'edit-btn';
+            editButton.addEventListener('click', () => editCompany(index));
+
+            const deleteButton = document.createElement('button');
+            deleteButton.textContent = '삭제';
+            deleteButton.className = 'delete-btn';
+            deleteButton.addEventListener('click', () => deleteCompany(index));
+
+            listItem.appendChild(editButton);
+            listItem.appendChild(deleteButton);
+            companyList.appendChild(listItem);
+
+            const option = document.createElement('option');
+            option.value = `${company.name}`;  //검침값 저장시 업체명만 들어가도록 수정
+            option.textContent = `${company.floor} ${company.name} ${company.unit}`;
+            companySelect.appendChild(option);
+        });
+    }
+
+    // 업체 추가
+    function addCompany() {
+        const floor = newCompanyFloorInput.value.trim();
+        const name = newCompanyNameInput.value.trim();
+        const unit = newCompanyUnitInput.value.trim();
+
+        if (floor && name && unit) {
+            companies.push({ floor, name, unit });
+            saveCompanies();
+            renderCompanyList();
+            newCompanyFloorInput.value = '';
+            newCompanyNameInput.value = '';
+            newCompanyUnitInput.value = '';
+        } else {
+            alert('모든 정보를 입력하세요.');
+        }
+    }
+    // 업체 정보 수정
+      function editCompany(index) {
+          const company = companies[index];
+          const updatedFloor = prompt("층을 수정하세요:", company.floor);
+          const updatedName = prompt("업체명을 수정하세요:", company.name);
+          const updatedUnit = prompt("호수를 수정하세요:", company.unit);
+
+          if (updatedFloor !== null && updatedFloor.trim() !== '' &&
+              updatedName !== null && updatedName.trim() !== '' &&
+              updatedUnit !== null && updatedUnit.trim() !== '') {
+              companies[index] = { floor: updatedFloor.trim(), name: updatedName.trim(), unit: updatedUnit.trim() };
+              saveCompanies();
+              renderCompanyList();
+          }
+      }
+
+    // 업체 정보 삭제
+    function deleteCompany(index) {
+        if (confirm("정말로 이 업체 정보를 삭제하시겠습니까?")) {
+            companies.splice(index, 1);
+            saveCompanies();
+            renderCompanyList();
+        }
+    }
+
+
+    // 수정 함수
+    function editRecord(index) {
+      const record = records[index];
+      const updatedMonth = prompt("월을 수정하세요:", record.month);
+      const updatedCompany = prompt("업체를 수정하세요:", record.company);
+      const updatedWater = prompt("검침값을 수정하세요:", record.water);
+
+      if (updatedMonth !== null && updatedMonth.trim() !== '' &&
+          updatedCompany !== null && updatedCompany.trim() !== '' &&
+          updatedWater !== null && updatedWater.trim() !== '') {
+
+        const updatedRecord = {
+          month: updatedMonth,
+          company: updatedCompany,
+          water: updatedWater
+        };
+
+        const isDuplicate = records.some((r, i) => i !== index && r.month === updatedRecord.month && r.company === updatedRecord.company);
+        if (isDuplicate) {
+          alert("해당 월, 업체에 대한 검침값이 이미 존재합니다.");
+          return;
+        }
+
+        records[index] = updatedRecord;
+        saveRecords();
+        displayRecords();
+        renderComparisonTable();
+
+      }
+    }
+
+    // 삭제 함수
+    function deleteRecord(index) {
+        if (confirm("정말로 이 기록을 삭제하시겠습니까?")) {
+            records.splice(index, 1);
+            saveRecords();
+            displayRecords();
+            renderComparisonTable();
+        }
+    }
+
+    // 레코드 표시 (검색, 수정, 삭제 통합)
+    function displayRecords() {
+        recordsTable.innerHTML = ''; // 테이블 초기화
+        const searchMonth = searchMonthInput.value.trim();
+        const searchCompany = searchCompanyInput.value.trim();
+
+        const filteredRecords = records.filter(record => {
+            const monthMatch = !searchMonth || record.month.includes(searchMonth);
+            const companyMatch = !searchCompany || record.company.toLowerCase().includes(searchCompany.toLowerCase());
+            return monthMatch && companyMatch;
+        });
+
+
+        filteredRecords.forEach((record, index) => {
+            const row = recordsTable.insertRow();
+            row.insertCell().textContent = record.month;
+            row.insertCell().textContent = record.company;
+            row.insertCell().textContent = record.water;
+
+            // 수정/삭제 버튼이 들어갈 셀
+            const actionCell = row.insertCell();
+
+            // 수정 버튼
+            const editButton = document.createElement('button');
+            editButton.textContent = '수정';
+            editButton.className = 'edit-record-btn';
+            editButton.addEventListener('click', () => editRecord(records.indexOf(record)));
+            actionCell.appendChild(editButton); // 수정 버튼을 셀에 추가
+
+
+            // 삭제 버튼
+            const deleteButton = document.createElement('button');
+            deleteButton.textContent = '삭제';
+            deleteButton.className = 'delete-record-btn';
+            deleteButton.addEventListener('click', () => deleteRecord(records.indexOf(record)));
+            actionCell.appendChild(deleteButton); //삭제 버튼을 셀에 추가
+        });
+    }
+
+      // 검색 기능
+      function searchRecords() {
+        displayRecords(); // 검색 버튼 클릭 시 displayRecords 호출
+      }
+
+
+    // 월별 비교 테이블 생성
+    function renderComparisonTable() {
+      compareTableHead.innerHTML = '';
+      compareTableBody.innerHTML = '';
+
+      if (records.length === 0) return;
+
+      const dataByCompany = {};
+      records.forEach(record => {
+        if (!dataByCompany[record.company]) {
+          dataByCompany[record.company] = {};
+        }
+        dataByCompany[record.company][record.month] = record.water;
+      });
+
+      const allMonths = [...new Set(records.map(record => record.month))].sort();
+
+      const headerMonthCell = document.createElement('th');
+      headerMonthCell.textContent = "업체";
+      compareTableHead.appendChild(headerMonthCell);
+
+      allMonths.forEach(month => {
+        const th = document.createElement('th');
+        th.textContent = month;
+        compareTableHead.appendChild(th);
+      });
+
+
+      for (const company in dataByCompany) {
+        const row = compareTableBody.insertRow();
+        const companyCell = row.insertCell();
+        companyCell.textContent = company;
+
+        allMonths.forEach(month => {
+          const cell = row.insertCell();
+          cell.textContent = dataByCompany[company][month] || '-';
+        });
+      }
+    }
+
+    // 탭 전환
+    function openTab(evt, tabName) {
+        let i, tabcontent, tablinks;
+        tabcontent = document.getElementsByClassName("tabcontent");
+        for (i = 0; i < tabcontent.length; i++) {
+            tabcontent[i].style.display = "none";
+        }
+        tablinks = document.getElementsByClassName("tablinks");
+        for (i = 0; i < tablinks.length; i++) {
+            tablinks[i].className = tablinks[i].className.replace(" active", "");
+        }
+        document.getElementById(tabName).style.display = "block";
+          if (evt) {
+              evt.currentTarget.className += " active";
+          } else {
+              document.querySelector('.tablinks').classList.add('active');
+          }
+    }
+
+    // 페이지 로드 시 초기화
+    window.onload = () => {
+        document.getElementById('readingMonth').value = getCurrentMonth();
+        renderCompanyList();
+        displayRecords(); // 초기 데이터 표시
+        renderComparisonTable();
+
+
+        let tablinks = document.getElementsByClassName("tablinks");
+        for (let i = 0; i < tablinks.length; i++) {
+          tablinks[i].addEventListener('click', function(event){
+            if (this.innerText.trim() === '기록') {
+              openTab(event, 'recordTab');
+            } else if (this.innerText.trim() === '업체 관리') {
+              openTab(event, 'companyTab');
+            } else if (this.innerText.trim() === '비교') {
+              openTab(event, 'compareTab');
+            }
+          });
+        }
+          openTab(null, 'recordTab');
+    };
+
+    // 폼 제출 처리
+    form.addEventListener('submit', (event) => {
+        event.preventDefault();
+
+        const newRecord = {
+            month: document.getElementById('readingMonth').value,
+            company: document.getElementById('company').value,
+            water: document.getElementById('waterMeter').value
+        };
+
+        const isDuplicate = records.some(record => record.month === newRecord.month && record.company === newRecord.company);
+
+        if (isDuplicate) {
+            alert('해당 월에 이미 해당 업체의 검침값이 저장되어 있습니다.');
+            return;
+        }
+
+
+        records.push(newRecord);
+        saveRecords();
+        displayRecords();
+        renderComparisonTable();
+        form.reset();
+        document.getElementById('readingMonth').value = getCurrentMonth();
+    });
+
+    // 업체 추가 버튼 이벤트 리스너
+    addCompanyButton.addEventListener('click', addCompany);
+    </script>
+</body>
+</html>
